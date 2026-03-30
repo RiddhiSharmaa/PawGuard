@@ -1,7 +1,7 @@
 'use client'
 
 import Image from 'next/image'
-import { MapPin, Clock, Ambulance, Syringe } from 'lucide-react'
+import { MapPin, Clock, Ambulance, Syringe, Eye } from 'lucide-react'
 import { PriorityBadge } from './priority-badge'
 import { type DogReport, getTimeAgo } from '@/lib/data'
 
@@ -59,6 +59,20 @@ export function DogCard({ dog, onClick }: DogCardProps) {
           <div className="flex items-center gap-1.5 text-green-600 text-[13px] mb-2">
             <Ambulance className="w-4 h-4 flex-shrink-0" />
             <span>Rescue dispatched · {dog.ngo_name}</span>
+          </div>
+        )}
+
+        {dog.status === 'processing' && (
+          <div className="flex items-center gap-1.5 text-blue-600 text-[13px] mb-2">
+            <Eye className="w-4 h-4 flex-shrink-0" />
+            <span>AI triage in progress</span>
+          </div>
+        )}
+
+        {dog.status === 'monitoring' && (
+          <div className="flex items-center gap-1.5 text-amber-700 text-[13px] mb-2">
+            <Eye className="w-4 h-4 flex-shrink-0" />
+            <span>Being monitored</span>
           </div>
         )}
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { 
@@ -12,28 +12,13 @@ import {
   Loader2,
   CheckCircle,
   AlertCircle,
-  Map
+  Map,
+  TriangleAlert
 } from 'lucide-react'
 import { TopNav } from '@/components/street-guard/top-nav'
 import { PriorityBadge } from '@/components/street-guard/priority-badge'
-
-interface Assessment {
-  priority: 'urgent' | 'medium' | 'low'
-  priority_reason: string
-  is_injured: boolean
-  is_aggressive: boolean
-  estimated_age: string
-  condition: string
-  rescue_needed: boolean
-}
-
-interface ReportResult {
-  dog_id: string
-  status: 'success' | 'duplicate'
-  assessment: Assessment
-  rescue_dispatched: boolean
-  ngo_name: string
-}
+import { submitReport } from '@/lib/api'
+import { ReportResult } from '@/lib/data'
 
 const processingMessages = [
   'Analyzing the image with AI...',
@@ -45,16 +30,19 @@ const processingMessages = [
 export default function ReportPage() {
   const [step, setStep] = useState(1)
   const [image, setImage] = useState<string | null>(null)
+  const [imageFile, setImageFile] = useState<File | null>(null)
   const [description, setDescription] = useState('')
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null)
   const [address, setAddress] = useState('')
   const [locationDetected, setLocationDetected] = useState(false)
   const [processingMessageIndex, setProcessingMessageIndex] = useState(0)
   const [result, setResult] = useState<ReportResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
+      setImageFile(file)
       const reader = new FileReader()
       reader.onloadend = () => {
         setImage(reader.result as string)
@@ -65,6 +53,7 @@ export default function ReportPage() {
 
   const clearImage = () => {
     setImage(null)
+    setImageFile(null)
   }
 
   const detectLocation = () => {
@@ -85,49 +74,57 @@ export default function ReportPage() {
   }
 
   const handleSubmit = async () => {
+    if (!imageFile || !location) {
+      setError('Please upload an image and detect your location before submitting.')
+      return
+    }
+
+    setError(null)
     setStep(3)
-    
-    // Simulate processing with rotating messages
+
     const messageInterval = setInterval(() => {
       setProcessingMessageIndex((prev) => (prev + 1) % processingMessages.length)
     }, 2000)
 
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 6000))
-    
-    clearInterval(messageInterval)
+    try {
+      const response = await submitReport({
+        image: imageFile,
+        latitude: location.lat,
+        longitude: location.lng,
+        address:
+          address.trim() ||
+          `Lat ${location.lat.toFixed(5)}, Lng ${location.lng.toFixed(5)}`,
+        description: description.trim() || 'No description provided',
+      })
 
-    // Mock result
-    const mockResult: ReportResult = {
-      dog_id: 'dog_' + Math.random().toString(36).substr(2, 9),
-      status: 'success',
-      assessment: {
-        priority: 'urgent',
-        priority_reason: 'Visible injury requiring immediate attention',
-        is_injured: true,
-        is_aggressive: false,
-        estimated_age: 'adult',
-        condition: description || 'Dog appears to be in distress with visible injuries. Immediate rescue recommended.',
-        rescue_needed: true,
-      },
-      rescue_dispatched: true,
-      ngo_name: 'Friendicoes SECA',
+      setResult(response)
+      setStep(4)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to submit the report right now.')
+      setStep(2)
+    } finally {
+      clearInterval(messageInterval)
     }
-
-    setResult(mockResult)
-    setStep(4)
   }
 
   const resetForm = () => {
     setStep(1)
     setImage(null)
+    setImageFile(null)
     setDescription('')
     setLocation(null)
     setAddress('')
     setLocationDetected(false)
     setResult(null)
     setProcessingMessageIndex(0)
+    setError(null)
   }
+
+  useEffect(() => {
+    if (step !== 3) {
+      setProcessingMessageIndex(0)
+    }
+  }, [step])
 
   return (
     <>
@@ -295,7 +292,7 @@ export default function ReportPage() {
                 </div>
 
                 {/* Map Preview */}
-                <div className="h-64 rounded-2xl overflow-hidden bg-[var(--sg-neutral-100)]">
+                <div className="relative h-64 rounded-2xl overflow-hidden bg-[var(--sg-neutral-100)]">
                   {location ? (
                     <Image
                       src={`https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/pin-l+EA6C1E(${location.lng},${location.lat})/${location.lng},${location.lat},14,0/400x256@2x?access_token=${process.env.NEXT_PUBLIC_MAPBOX_TOKEN}`}
@@ -321,10 +318,10 @@ export default function ReportPage() {
                 </button>
                 <button
                   onClick={handleSubmit}
-                  disabled={!locationDetected && !address}
+                  disabled={!locationDetected || !location}
                   className={`
                     px-8 py-3 rounded-xl font-semibold transition-all duration-200 active:scale-95
-                    ${locationDetected || address
+                    ${locationDetected && location
                       ? 'bg-[var(--sg-primary)] text-white hover:bg-[var(--sg-primary-dark)]'
                       : 'bg-[var(--sg-neutral-200)] text-[var(--sg-neutral-400)] cursor-not-allowed'
                     }
@@ -333,6 +330,13 @@ export default function ReportPage() {
                   Submit Report
                 </button>
               </div>
+
+              {error && (
+                <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  <TriangleAlert className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -369,7 +373,11 @@ export default function ReportPage() {
                       Assessment Details
                     </h3>
                     <p className="text-[var(--sg-neutral-600)] mb-4 leading-relaxed">
-                      {result.assessment.condition}
+                      {result.assessment.injury_description ||
+                        result.assessment.body_condition_label ||
+                        result.assessment.visible_conditions.join(', ') ||
+                        description ||
+                        'Assessment completed.'}
                     </p>
                     <div className="flex flex-wrap gap-2">
                       {result.assessment.is_injured && (
@@ -385,6 +393,11 @@ export default function ReportPage() {
                       <span className="px-3 py-1 bg-[var(--sg-neutral-100)] text-[var(--sg-neutral-600)] rounded-full text-sm font-medium capitalize">
                         {result.assessment.estimated_age}
                       </span>
+                      {result.assessment.rescue_needed && (
+                        <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
+                          Rescue needed
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -429,6 +442,47 @@ export default function ReportPage() {
                       View on Map
                     </Link>
                   </div>
+
+                  {(result.status_updates?.length || result.possible_ngos?.length) && (
+                    <div className="mt-6 space-y-4">
+                      {result.status_updates && result.status_updates.length > 0 && (
+                        <div className="bg-white rounded-2xl shadow-sm p-6">
+                          <h3 className="font-semibold text-[var(--sg-neutral-800)] mb-3">
+                            Status updates
+                          </h3>
+                          <div className="space-y-2 text-sm text-[var(--sg-neutral-600)]">
+                            {result.status_updates.map((update) => (
+                              <p key={update}>{update}</p>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {result.possible_ngos && result.possible_ngos.length > 0 && !result.rescue_dispatched && (
+                        <div className="bg-white rounded-2xl shadow-sm p-6">
+                          <h3 className="font-semibold text-[var(--sg-neutral-800)] mb-3">
+                            Nearby NGO suggestions
+                          </h3>
+                          <div className="space-y-3 text-sm text-[var(--sg-neutral-600)]">
+                            {result.possible_ngos.map((ngo) => (
+                              <div key={`${ngo.name}-${ngo.email || ngo.phone || 'ngo'}`}>
+                                <p className="font-medium text-[var(--sg-neutral-800)]">{ngo.name}</p>
+                                <p>
+                                  {[
+                                    ngo.specialization,
+                                    ngo.coverage_area,
+                                    typeof ngo.distance_km === 'number' ? `${ngo.distance_km} km away` : null,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(' · ')}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

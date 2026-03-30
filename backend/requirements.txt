@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+crewai
+crewai-tools
+langchain-groq
+groq
+google-generativeai
+supabase
+python-dotenv
+pillow
+requests
+tavily-python
+pydantic
+python-multipart

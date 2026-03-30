@@ -15,7 +15,8 @@ import {
 } from 'lucide-react'
 import { TopNav } from '@/components/street-guard/top-nav'
 import { PriorityBadge } from '@/components/street-guard/priority-badge'
-import { type DogReport, mockDogs, getTimeAgo } from '@/lib/data'
+import { fetchDogs as fetchDogsFromApi } from '@/lib/api'
+import { type DogReport, getTimeAgo } from '@/lib/data'
 
 // Dynamically import the map component to avoid SSR issues
 const MapComponent = dynamic(
@@ -40,30 +41,29 @@ const filterOptions: { value: FilterType; label: string }[] = [
 ]
 
 export default function MapPage() {
-  const [dogs, setDogs] = useState<DogReport[]>(mockDogs)
+  const [dogs, setDogs] = useState<DogReport[]>([])
   const [filter, setFilter] = useState<FilterType>('all')
   const [selectedDog, setSelectedDog] = useState<DogReport | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    // Simulate API fetch
-    const fetchDogs = async () => {
+    const loadDogs = async () => {
       try {
-        // In production, this would be: const res = await fetch('http://localhost:8000/dogs')
-        await new Promise(resolve => setTimeout(resolve, 500))
-        setDogs(mockDogs)
-      } catch {
-        // Fallback to mock data
-        setDogs(mockDogs)
+        const data = await fetchDogsFromApi()
+        setDogs(data)
+        setError(null)
+      } catch (err) {
+        setDogs([])
+        setError(err instanceof Error ? err.message : 'Unable to load the rescue map.')
       } finally {
         setIsLoading(false)
       }
     }
 
-    fetchDogs()
+    loadDogs()
 
-    // Refresh every 30 seconds
-    const interval = setInterval(fetchDogs, 30000)
+    const interval = setInterval(loadDogs, 30000)
     return () => clearInterval(interval)
   }, [])
 
@@ -71,7 +71,7 @@ export default function MapPage() {
     if (filter === 'all') return true
     if (filter === 'urgent') return dog.priority === 'urgent'
     if (filter === 'medium') return dog.priority === 'medium'
-    if (filter === 'rescued') return dog.status === 'rescued'
+    if (filter === 'rescued') return dog.status === 'rescued' || dog.status === 'rescue_dispatched'
     return true
   })
 
@@ -138,6 +138,10 @@ export default function MapPage() {
               <div className="flex items-center justify-center h-32">
                 <Loader2 className="w-6 h-6 text-[var(--sg-primary)] animate-spin" />
               </div>
+            ) : error ? (
+              <div className="flex items-center justify-center h-32 px-4 text-center text-sm text-[var(--sg-neutral-500)]">
+                {error}
+              </div>
             ) : selectedDog ? (
               /* Selected Dog Detail */
               <div>
@@ -174,6 +178,13 @@ export default function MapPage() {
                   <div className="flex items-center gap-2 bg-green-50 text-green-700 px-4 py-3 rounded-xl mb-3">
                     <Ambulance className="w-5 h-5 flex-shrink-0" />
                     <span className="text-sm">Rescue dispatched by {selectedDog.ngo_name}</span>
+                  </div>
+                )}
+
+                {selectedDog.status === 'monitoring' && (
+                  <div className="flex items-center gap-2 bg-amber-50 text-amber-700 px-4 py-3 rounded-xl mb-3">
+                    <Clock className="w-5 h-5 flex-shrink-0" />
+                    <span className="text-sm">Case is being monitored for follow-up</span>
                   </div>
                 )}
 

@@ -13,10 +13,12 @@ import {
   Loader2,
   Phone,
   MapPin,
-  CheckCircle
+  CheckCircle,
+  TriangleAlert
 } from 'lucide-react'
 import { TopNav } from '@/components/street-guard/top-nav'
-import { mockHospitals } from '@/lib/data'
+import { requestSOSGuidance } from '@/lib/api'
+import { SOSGuidance, mockHospitals } from '@/lib/data'
 
 type Step = 1 | 2 | 3 | 'result'
 
@@ -48,6 +50,8 @@ export default function SOSPage() {
   const [severity, setSeverity] = useState<string | null>(null)
   const [behaviors, setBehaviors] = useState<string[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
+  const [guidance, setGuidance] = useState<SOSGuidance | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   const toggleBehavior = (id: string) => {
     setBehaviors((prev) =>
@@ -57,24 +61,40 @@ export default function SOSPage() {
 
   const handleGetGuidance = async () => {
     setIsProcessing(true)
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 2000))
-    setIsProcessing(false)
-    setStep('result')
-  }
+    setError(null)
 
-  const getRiskLevel = () => {
-    const hasHighRiskBehavior = behaviors.some(b => ['foaming', 'unprovoked', 'strange'].includes(b))
-    const isHighRiskLocation = biteLocation === 'face'
-    const isSevere = severity === 'deep'
+    let detectedLocation: { lat: number; lng: number } | null = null
 
-    if (hasHighRiskBehavior || isHighRiskLocation || isSevere) {
-      return 'high'
+    if (navigator.geolocation) {
+      detectedLocation = await new Promise((resolve) => {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            resolve({
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+            })
+          },
+          () => resolve(null),
+          { timeout: 5000 }
+        )
+      })
     }
-    if (severity === 'bleeding' || behaviors.includes('unknown')) {
-      return 'medium'
+
+    try {
+      const response = await requestSOSGuidance({
+        bite_location: biteLocation || 'other',
+        severity: severity || 'scratch',
+        symptoms: behaviors,
+        lat: detectedLocation?.lat,
+        lng: detectedLocation?.lng,
+      })
+      setGuidance(response)
+      setStep('result')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to get SOS guidance right now.')
+    } finally {
+      setIsProcessing(false)
     }
-    return 'low'
   }
 
   const resetForm = () => {
@@ -82,6 +102,8 @@ export default function SOSPage() {
     setBiteLocation(null)
     setSeverity(null)
     setBehaviors([])
+    setGuidance(null)
+    setError(null)
   }
 
   return (
@@ -290,11 +312,18 @@ export default function SOSPage() {
                   )}
                 </button>
               </div>
+
+              {error && (
+                <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  <TriangleAlert className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
             </div>
           )}
 
           {/* Result */}
-          {step === 'result' && (
+          {step === 'result' && guidance && (
             <div>
               <div className="grid grid-cols-2 gap-8">
                 {/* Left Column - Immediate Steps + Risk */}
@@ -303,41 +332,34 @@ export default function SOSPage() {
                   <div className="bg-[var(--sg-urgent)] text-white rounded-2xl p-6 mb-6">
                     <h3 className="font-semibold text-lg mb-4">Do this RIGHT NOW</h3>
                     <ol className="space-y-3">
-                      <li className="flex gap-3">
-                        <span className="flex-shrink-0 w-6 h-6 bg-white/20 rounded-full flex items-center justify-center text-sm font-semibold">1</span>
-                        <span>Wash the wound thoroughly with soap and running water for 15 minutes</span>
-                      </li>
-                      <li className="flex gap-3">
-                        <span className="flex-shrink-0 w-6 h-6 bg-white/20 rounded-full flex items-center justify-center text-sm font-semibold">2</span>
-                        <span>Apply antiseptic (povidone-iodine or alcohol) to the wound</span>
-                      </li>
-                      <li className="flex gap-3">
-                        <span className="flex-shrink-0 w-6 h-6 bg-white/20 rounded-full flex items-center justify-center text-sm font-semibold">3</span>
-                        <span>Go to the nearest hospital IMMEDIATELY for rabies PEP vaccination</span>
-                      </li>
-                      <li className="flex gap-3">
-                        <span className="flex-shrink-0 w-6 h-6 bg-white/20 rounded-full flex items-center justify-center text-sm font-semibold">4</span>
-                        <span>Do NOT apply traditional remedies or cover the wound tightly</span>
-                      </li>
+                      {guidance.immediate_steps.map((stepText, index) => (
+                        <li key={`${index}-${stepText}`} className="flex gap-3">
+                          <span className="flex-shrink-0 w-6 h-6 bg-white/20 rounded-full flex items-center justify-center text-sm font-semibold">
+                            {index + 1}
+                          </span>
+                          <span>{stepText}</span>
+                        </li>
+                      ))}
                     </ol>
                   </div>
 
                   {/* Risk Assessment */}
                   {(() => {
-                    const risk = getRiskLevel()
                     const riskConfig = {
                       high: { bg: 'bg-red-100', border: 'border-red-200', text: 'text-red-800', label: 'HIGH RISK' },
                       medium: { bg: 'bg-amber-100', border: 'border-amber-200', text: 'text-amber-800', label: 'MODERATE RISK' },
                       low: { bg: 'bg-green-100', border: 'border-green-200', text: 'text-green-800', label: 'LOWER RISK' },
                     }
-                    const config = riskConfig[risk]
+                    const config = riskConfig[guidance.risk_level]
                     return (
                       <div className={`${config.bg} border ${config.border} rounded-2xl p-6`}>
                         <div className={`font-bold text-lg mb-2 ${config.text}`}>{config.label}</div>
                         <p className={`${config.text} opacity-80`}>
-                          {risk === 'high' && 'Based on your responses, you should seek medical attention immediately. Rabies vaccination is critical.'}
-                          {risk === 'medium' && 'You should see a doctor within 24 hours. Rabies vaccination is strongly recommended as a precaution.'}
-                          {risk === 'low' && 'While the risk appears lower, we still recommend seeing a doctor. Rabies is 100% fatal once symptoms appear.'}
+                          {guidance.risk_explanation}
+                        </p>
+                        <p className={`mt-3 text-sm font-medium ${config.text}`}>
+                          Seek care: {guidance.seek_care_urgency}
+                          {guidance.pep_recommended ? ' | PEP recommended' : ' | PEP may not be required'}
                         </p>
                       </div>
                     )

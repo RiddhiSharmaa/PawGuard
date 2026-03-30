@@ -1,0 +1,40 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from config import configure_logging, load_backend_env
+
+load_backend_env()
+configure_logging()
+
+from routes import dogs, ngos_api, report, sos
+
+app = FastAPI(
+    title="StreetGuard API",
+    description="Agentic backend for stray dog triage, rescue coordination, and SOS guidance.",
+    version="1.0.0",
+)
+
+allowed_origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(report.router, tags=["reports"])
+app.include_router(dogs.router, tags=["dogs"])
+app.include_router(sos.router, tags=["sos"])
+app.include_router(ngos_api.router, tags=["ngos"])
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok", "service": "StreetGuard Agentic Backend"}

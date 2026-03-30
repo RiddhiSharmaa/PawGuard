@@ -1,17 +1,69 @@
+export type DogPriority = 'urgent' | 'medium' | 'low'
+
+export type DogStatus =
+  | 'processing'
+  | 'reported'
+  | 'monitoring'
+  | 'rescue_dispatched'
+  | 'rescued'
+
 export interface DogReport {
   id: string
   image_url: string
   latitude: number
   longitude: number
   location_address: string
-  priority: 'urgent' | 'medium' | 'low'
+  priority: DogPriority
   is_injured: boolean
+  is_aggressive?: boolean
   condition: string
-  estimated_age: 'puppy' | 'young' | 'adult' | 'senior'
-  status: 'reported' | 'rescue_dispatched' | 'rescued'
+  estimated_age: string
+  status: DogStatus
   ngo_name: string | null
   reported_at: string
   is_vaccinated: boolean
+  description?: string
+  rescue_needed?: boolean
+}
+
+export interface SOSGuidance {
+  risk_level: 'high' | 'medium' | 'low'
+  risk_explanation: string
+  immediate_steps: string[]
+  seek_care_urgency: 'immediately' | 'within 24 hours' | 'within 72 hours' | 'monitor at home'
+  pep_recommended: boolean
+}
+
+export interface ReportAssessment {
+  priority: DogPriority
+  priority_reason: string
+  is_injured: boolean
+  is_aggressive: boolean
+  estimated_age: string
+  injury_description?: string | null
+  body_condition_label?: string | null
+  visible_conditions: string[]
+  rescue_needed: boolean
+  triage_reasoning: string
+}
+
+export interface ReportResult {
+  dog_id: string
+  status: 'success' | 'duplicate'
+  assessment: ReportAssessment
+  rescue_dispatched: boolean
+  ngo_name: string
+  is_duplicate: boolean
+  possible_ngos?: Array<{
+    name: string
+    email?: string
+    phone?: string
+    specialization?: string
+    distance_km?: number | null
+    coverage_area?: string
+  }>
+  status_updates?: string[]
+  agent_reasoning: Record<string, unknown>
 }
 
 export interface Hospital {
