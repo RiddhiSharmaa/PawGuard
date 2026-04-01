@@ -32,6 +32,11 @@ def get_client() -> Client:
         supabase_url, supabase_key = _get_supabase_credentials()
         if not supabase_url or not supabase_key:
             raise RuntimeError("SUPABASE_URL and SUPABASE_KEY must be configured.")
+        if supabase_key.startswith("sb_publishable_"):
+            logger.warning(
+                "Supabase client is using a publishable key. Reads may be blocked by RLS; "
+                "set SUPABASE_SERVICE_ROLE_KEY on the backend for server-side access."
+            )
         _client = create_client(supabase_url, supabase_key)
     return _client
 

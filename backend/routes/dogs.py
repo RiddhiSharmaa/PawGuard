@@ -14,14 +14,15 @@ logger = logging.getLogger(__name__)
 def get_dogs():
     supabase = get_client_safe()
     if supabase is None:
-        return []
+        raise HTTPException(status_code=503, detail="Supabase client is not configured for the backend.")
 
     try:
         response = supabase.table("dogs").select("*").order("reported_at", desc=True).execute()
+        logger.info("Fetched %s dog reports from Supabase", len(response.data or []))
         return response.data or []
-    except Exception:
+    except Exception as exc:
         logger.exception("Failed to fetch dog reports")
-        return []
+        raise HTTPException(status_code=503, detail=f"Failed to fetch dog reports from Supabase: {exc}") from exc
 
 
 @router.get("/dogs/{dog_id}")
