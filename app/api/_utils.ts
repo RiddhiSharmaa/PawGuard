@@ -14,8 +14,21 @@ export async function proxyToBackend(
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
+    const isFormData = init?.body instanceof FormData
+
     const response = await fetch(`${BACKEND_API_BASE_URL}${path}`, {
-      ...init,
+      method: init?.method || 'GET',
+      body: init?.body,
+
+      // ✅ ONLY pass headers if NOT FormData
+      ...(isFormData
+        ? {}
+        : {
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          }),
+
       cache: 'no-store',
       signal: controller.signal,
     })
@@ -25,7 +38,8 @@ export async function proxyToBackend(
     return new Response(body, {
       status: response.status,
       headers: {
-        'Content-Type': response.headers.get('Content-Type') || 'application/json',
+        'Content-Type':
+          response.headers.get('Content-Type') || 'application/json',
       },
     })
   } catch (error) {

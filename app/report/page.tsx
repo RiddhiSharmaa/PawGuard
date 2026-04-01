@@ -3,6 +3,11 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
+import dynamic from 'next/dynamic'
+
+const MapPreview = dynamic(() => import('@/components/MapPreview'), {
+  ssr: false,
+})
 import { 
   ChevronLeft, 
   Camera, 
@@ -292,21 +297,16 @@ export default function ReportPage() {
                 </div>
 
                 {/* Map Preview */}
-                <div className="relative h-64 rounded-2xl overflow-hidden bg-[var(--sg-neutral-100)]">
-                  {location ? (
-                    <Image
-                      src={`https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/pin-l+EA6C1E(${location.lng},${location.lat})/${location.lng},${location.lat},14,0/400x256@2x?access_token=${process.env.NEXT_PUBLIC_MAPBOX_TOKEN}`}
-                      alt="Map preview"
-                      fill
-                      className="object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex flex-col items-center justify-center text-[var(--sg-neutral-400)]">
-                      <Map className="w-12 h-12 mb-2 opacity-50" />
-                      <span className="text-sm">Map preview will appear here</span>
-                    </div>
-                  )}
-                </div>
+                <div className="h-64 rounded-2xl overflow-hidden">
+  {location ? (
+    <MapPreview lat={location.lat} lng={location.lng} />
+  ) : (
+    <div className="w-full h-full flex flex-col items-center justify-center text-[var(--sg-neutral-400)] bg-[var(--sg-neutral-100)]">
+      <Map className="w-12 h-12 mb-2 opacity-50" />
+      <span className="text-sm">Map preview will appear here</span>
+    </div>
+  )}
+</div>
               </div>
 
               <div className="flex justify-between mt-8">
