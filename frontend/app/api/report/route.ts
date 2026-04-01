@@ -2,8 +2,12 @@ import { proxyToBackend } from '../_utils'
 
 export async function POST(request: Request) {
   const formData = await request.formData()
-  return proxyToBackend('/report', {
-    method: 'POST',
-    body: formData,
-  })
+  return proxyToBackend(
+    '/report',
+    {
+      method: 'POST',
+      body: formData,
+    },
+    120000
+  )
 }

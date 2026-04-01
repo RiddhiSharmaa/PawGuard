@@ -43,8 +43,8 @@ export async function proxyToBackend(
   } catch (error) {
     const detail =
       error instanceof Error && error.name === 'AbortError'
-        ? `Timed out while contacting backend endpoint ${path}.`
-        : `Unable to reach backend endpoint ${path}.`
+        ? `Timed out while contacting backend endpoint ${path} at ${API_URL}.`
+        : `Unable to reach backend endpoint ${path} at ${API_URL}.`
 
     return Response.json({ detail }, { status: 502 })
   } finally {
