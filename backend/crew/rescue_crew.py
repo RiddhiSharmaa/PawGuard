@@ -1,49 +1,108 @@
 from __future__ import annotations
 
+import json
 import logging
-from typing import Any
 
-from crewai import Crew, Process, Task
-
-from agents.duplicate_agent import create_duplicate_agent
-from agents.followup_agent import create_followup_agent
-from agents.rescue_coordinator import create_rescue_coordinator_agent
-from agents.triage_agent import create_triage_agent
-from config import configure_crewai_runtime
 from models import DuplicateCheckResult, RescueResult, TriageAssessment
 from services.llm_parsing import parse_json_maybe
+from services.ngo_service import get_candidate_ngos, get_specialization_for_case
+from tools.db_tool import GetDogByIdTool, GetRecentDogsTool
+from tools.email_tool import SendRescueEmailTool
+from tools.image_tool import DogImageAssessTool
 
 logger = logging.getLogger(__name__)
-configure_crewai_runtime()
 
 
-def _clip_text(value: str, limit: int) -> str:
-    text = " ".join((value or "").split())
-    if len(text) <= limit:
-        return text
-    return f"{text[: limit - 3]}..."
+def _build_fallback_triage(description: str) -> TriageAssessment:
+    text = (description or "").lower()
+    urgent_keywords = ["bleed", "injur", "hit", "limp", "wound", "fracture", "critical"]
+    aggressive_keywords = ["aggressive", "attacking", "biting", "growling"]
+    is_injured = any(keyword in text for keyword in urgent_keywords)
+    is_aggressive = any(keyword in text for keyword in aggressive_keywords)
+    priority = "urgent" if is_injured else "medium"
+
+    return TriageAssessment(
+        is_injured=is_injured,
+        injury_description=description or None,
+        estimated_age="unknown",
+        is_aggressive=is_aggressive,
+        visible_conditions=[],
+        priority=priority,
+        priority_reason="Fallback assessment used because the AI rescue pipeline was unavailable.",
+        rescue_needed=is_injured,
+        triage_reasoning="Generated from the reporter description because automated triage failed.",
+    )
 
 
-def _compact_triage_context(triage: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "is_injured": bool(triage.get("is_injured")),
-        "injury_description": _clip_text(str(triage.get("injury_description") or ""), 120),
-        "estimated_age": triage.get("estimated_age") or "unknown",
-        "is_aggressive": bool(triage.get("is_aggressive")),
-        "visible_conditions": list((triage.get("visible_conditions") or [])[:3]),
-        "priority": triage.get("priority") or "medium",
-        "priority_reason": _clip_text(str(triage.get("priority_reason") or ""), 120),
-        "rescue_needed": bool(triage.get("rescue_needed")),
-    }
+def _run_triage(image_base64: str, description: str) -> TriageAssessment:
+    try:
+        payload = parse_json_maybe(
+            DogImageAssessTool(image_base64=image_base64, description=description)._run()
+        )
+        return TriageAssessment.model_validate(payload)
+    except Exception:
+        logger.exception("Image triage failed; using fallback triage")
+        return _build_fallback_triage(description)
 
 
-def _compact_duplicate_context(duplicate_check: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "is_duplicate": bool(duplicate_check.get("is_duplicate")),
-        "duplicate_of_id": duplicate_check.get("duplicate_of_id"),
-        "confidence": duplicate_check.get("confidence") or "low",
-        "reasoning": _clip_text(str(duplicate_check.get("reasoning") or ""), 120),
-    }
+def _run_duplicate_check(latitude: float, longitude: float, dog_id: str) -> DuplicateCheckResult:
+    try:
+        payload = json.loads(GetRecentDogsTool()._run(latitude=latitude, longitude=longitude, radius_km=0.15))
+        candidates = [item for item in payload if item.get("id") and item.get("id") != dog_id]
+        if not candidates:
+            return DuplicateCheckResult()
+
+        nearest = sorted(
+            candidates,
+            key=lambda item: item.get("distance_km") if item.get("distance_km") is not None else 99999,
+        )[0]
+        distance_km = nearest.get("distance_km")
+        if distance_km is None:
+            return DuplicateCheckResult()
+
+        if distance_km <= 0.05:
+            confidence = "high"
+        elif distance_km <= 0.12:
+            confidence = "medium"
+        else:
+            confidence = "low"
+
+        return DuplicateCheckResult(
+            is_duplicate=confidence != "low",
+            duplicate_of_id=nearest.get("id"),
+            confidence=confidence,
+            reasoning=f"Nearest recent report is {distance_km:.3f} km away.",
+        )
+    except Exception:
+        logger.exception("Duplicate detection failed")
+        return DuplicateCheckResult()
+
+
+def _send_rescue_email(ngo_name: str, ngo_email: str, dog_id: str, address: str, triage: TriageAssessment) -> tuple[bool, str]:
+    subject = f"Urgent dog rescue request: {triage.priority} priority"
+    body = (
+        f"Dog ID: {dog_id}\n"
+        f"Location: {address}\n"
+        f"Priority: {triage.priority}\n"
+        f"Injured: {'yes' if triage.is_injured else 'no'}\n"
+        f"Aggressive: {'yes' if triage.is_aggressive else 'no'}\n"
+        f"Assessment: {triage.injury_description or triage.priority_reason or 'Assessment attached in system.'}\n"
+        "Please confirm if your team can respond."
+    )
+
+    try:
+        result = json.loads(
+            SendRescueEmailTool()._run(
+                to_email=ngo_email,
+                to_name=ngo_name,
+                subject=subject,
+                body=body,
+            )
+        )
+        return bool(result.get("success")), body
+    except Exception:
+        logger.exception("Rescue email sending failed")
+        return False, body
 
 
 def run_rescue_crew(
@@ -53,170 +112,113 @@ def run_rescue_crew(
     address: str,
     description: str,
     dog_id: str,
-) -> dict[str, Any]:
-    try:
-        triage = create_triage_agent(image_base64=image_base64, description=description)
-        dedup = create_duplicate_agent()
-        coordinator = create_rescue_coordinator_agent()
-    except Exception:
-        logger.exception("Failed to initialize rescue crew agents")
+) -> dict[str, object]:
+    triage = _run_triage(image_base64=image_base64, description=description)
+    duplicate_check = _run_duplicate_check(latitude=latitude, longitude=longitude, dog_id=dog_id)
+
+    if duplicate_check.is_duplicate and duplicate_check.confidence != "low":
         return {
-            "triage": TriageAssessment().model_dump(),
-            "duplicate_check": DuplicateCheckResult().model_dump(),
-            "rescue": RescueResult(status="reported").model_dump(),
+            "triage": triage.model_dump(),
+            "duplicate_check": duplicate_check.model_dump(),
+            "rescue": RescueResult(
+                status="reported",
+                reasoning="Possible duplicate detected, so automatic dispatch was skipped.",
+            ).model_dump(),
         }
 
-    triage_task = Task(
-        description=(
-            "Assess this emergency report.\n"
-            f"Dog ID: {dog_id}\n"
-            f"Location: {_clip_text(address, 120)}\n"
-            f"Reporter note: {_clip_text(description, 220)}\n"
-            "Call `assess_dog_image` once and return only compact JSON with the triage fields."
-        ),
-        agent=triage,
-        expected_output="A valid JSON triage assessment.",
+    specialization = get_specialization_for_case(
+        triage.priority,
+        description,
+        triage.visible_conditions,
     )
+    ngos = get_candidate_ngos(latitude, longitude, specialization=specialization)
 
-    crew = Crew(
-        agents=[triage],
-        tasks=[triage_task],
-        process=Process.sequential,
-        verbose=False,
-        tracing=False,
-    )
-
-    try:
-        final_result = crew.kickoff()
-    except Exception:
-        logger.exception("Rescue crew execution failed")
+    if not triage.rescue_needed or not ngos:
         return {
-            "triage": TriageAssessment().model_dump(),
-            "duplicate_check": DuplicateCheckResult().model_dump(),
-            "rescue": RescueResult(status="reported").model_dump(),
+            "triage": triage.model_dump(),
+            "duplicate_check": duplicate_check.model_dump(),
+            "rescue": RescueResult(
+                status="monitoring" if not triage.rescue_needed else "reported",
+                reasoning=(
+                    "Rescue dispatch was not required based on triage."
+                    if not triage.rescue_needed
+                    else "No NGO candidates were available for automatic dispatch."
+                ),
+            ).model_dump(),
         }
 
-    try:
-        triage_parsed = TriageAssessment.model_validate(parse_json_maybe(triage_task.output))
-    except Exception:
-        logger.exception("Failed to parse triage output")
-        triage_parsed = TriageAssessment()
+    top_ngo = ngos[0]
+    email_sent, email_body = _send_rescue_email(
+        ngo_name=top_ngo.get("name", ""),
+        ngo_email=top_ngo.get("email", ""),
+        dog_id=dog_id,
+        address=address,
+        triage=triage,
+    )
 
-    compact_triage = _compact_triage_context(triage_parsed.model_dump())
-
-    dedup_task = Task(
-        description=(
-            "Check whether this report is a duplicate.\n"
-            f"Dog ID: {dog_id}\n"
-            f"Coordinates: {latitude:.5f}, {longitude:.5f}\n"
-            f"Address: {_clip_text(address, 120)}\n"
-            f"Reporter note: {_clip_text(description, 180)}\n"
-            f"Triage summary: {compact_triage}\n"
-            "Call `get_recent_dogs_nearby` with radius_km=0.15.\n"
-            "Return only compact JSON: is_duplicate, duplicate_of_id, confidence, reasoning."
+    rescue = RescueResult(
+        rescue_dispatched=email_sent,
+        ngo_name=top_ngo.get("name", ""),
+        ngo_email=top_ngo.get("email", ""),
+        email_sent=email_sent,
+        status_updated=email_sent,
+        status="rescue_dispatched" if email_sent else "reported",
+        email_body=email_body,
+        actions_taken=(
+            [f"Selected NGO: {top_ngo.get('name', 'unknown')}", "Sent rescue request email"]
+            if email_sent
+            else [f"Selected NGO: {top_ngo.get('name', 'unknown')}", "Prepared rescue request email"]
         ),
-        agent=dedup,
-        expected_output="A valid JSON duplicate-detection result.",
-    )
-
-    rescue_task = Task(
-        description=(
-            "Coordinate rescue for this report.\n"
-            f"Dog ID: {dog_id}\n"
-            f"Coordinates: {latitude:.5f}, {longitude:.5f}\n"
-            f"Address: {_clip_text(address, 120)}\n"
-            f"Triage summary: {compact_triage}\n"
-            "Use the duplicate result from the previous task.\n"
-            "Only dispatch if rescue_needed is true and duplicate is not high/medium confidence.\n"
-            "Use `get_ngos_by_location`. Use `search_ngos_web` only if DB results are empty.\n"
-            "Keep email_body short, actions_taken to max 3 items, reasoning to one sentence.\n"
-            "Return only compact JSON matching the rescue schema."
+        reasoning=(
+            "Auto-dispatched to the nearest matching NGO."
+            if email_sent
+            else "Prepared a dispatch for the nearest matching NGO, but the email send failed."
         ),
-        agent=coordinator,
-        expected_output="A valid JSON rescue-coordination result.",
-        context=[dedup_task],
     )
-
-    secondary_crew = Crew(
-        agents=[dedup, coordinator],
-        tasks=[dedup_task, rescue_task],
-        process=Process.sequential,
-        verbose=False,
-        tracing=False,
-    )
-
-    try:
-        secondary_result = secondary_crew.kickoff()
-    except Exception:
-        logger.exception("Duplicate/rescue crew execution failed")
-        return {
-            "triage": triage_parsed.model_dump(),
-            "duplicate_check": DuplicateCheckResult().model_dump(),
-            "rescue": RescueResult(status="reported").model_dump(),
-        }
-    def convert_confidence(value):
-        if isinstance(value, float):
-            if value >= 0.75:
-                return "high"
-        elif value >= 0.4:
-            return "medium"
-        else:
-            return "low"
-    return value
-
-
-    try:
-        data = parse_json_maybe(dedup_task.output)
-        if "confidence" in data:
-            data["confidence"] = convert_confidence(data["confidence"])
-            dedup_parsed = DuplicateCheckResult.model_validate(data)
-
-    except Exception:
-        logger.exception("Failed to parse duplicate detection output")
-        dedup_parsed = DuplicateCheckResult()
-
-    try:
-        rescue_parsed = RescueResult.model_validate(parse_json_maybe(rescue_task.output or secondary_result))
-    except Exception:
-        logger.exception("Failed to parse rescue coordination output")
-        rescue_parsed = RescueResult(status="reported")
 
     return {
-        "triage": triage_parsed.model_dump(),
-        "duplicate_check": dedup_parsed.model_dump(),
-        "rescue": rescue_parsed.model_dump(),
+        "triage": triage.model_dump(),
+        "duplicate_check": duplicate_check.model_dump(),
+        "rescue": rescue.model_dump(),
     }
 
 
-def run_followup_crew(dog_id: str, latitude: float, longitude: float) -> dict[str, Any]:
+def run_followup_crew(dog_id: str, latitude: float, longitude: float) -> dict[str, object]:
     try:
-        followup = create_followup_agent()
+        dog_record = json.loads(GetDogByIdTool()._run(dog_id=dog_id))
     except Exception:
-        logger.exception("Failed to initialize follow-up crew agent")
+        logger.exception("Failed to load dog record for follow-up")
         return RescueResult(status="reported").model_dump()
 
-    followup_task = Task(
-        description=(
-            f"Check follow-up status for dog ID {dog_id} at {latitude:.5f}, {longitude:.5f}.\n"
-            "Call `get_dog_by_id` first.\n"
-            "If already rescued, return compact JSON with status='rescued'.\n"
-            "If still unresolved, use `get_ngos_by_location`, send one short follow-up email, and update status.\n"
-            "Return only compact JSON matching the rescue schema."
+    if dog_record.get("status") == "rescued":
+        return RescueResult(status="rescued", reasoning="Dog is already marked as rescued.").model_dump()
+
+    ngos = get_candidate_ngos(latitude, longitude, specialization="general")
+    if not ngos:
+        return RescueResult(status="reported", reasoning="No backup NGOs available for follow-up.").model_dump()
+
+    top_ngo = ngos[0]
+    email_sent, email_body = _send_rescue_email(
+        ngo_name=top_ngo.get("name", ""),
+        ngo_email=top_ngo.get("email", ""),
+        dog_id=dog_id,
+        address=dog_record.get("location_address") or "Location unavailable",
+        triage=TriageAssessment(
+            priority=dog_record.get("priority") or "medium",
+            is_injured=bool(dog_record.get("is_injured")),
+            injury_description=dog_record.get("condition"),
+            rescue_needed=bool(dog_record.get("rescue_needed")),
         ),
-        agent=followup,
-        expected_output="A valid JSON summary of follow-up actions.",
     )
 
-    try:
-        crew = Crew(
-            agents=[followup],
-            tasks=[followup_task],
-            process=Process.sequential,
-            verbose=False,
-            tracing=False,
-        )
-        result = crew.kickoff()
-        return parse_json_maybe(result)
-    except Exception:
-        logger.exception("Follow-up crew execution failed for dog %s", dog_id)
-        return RescueResult(status="reported").model_dump()
+    return RescueResult(
+        rescue_dispatched=email_sent,
+        ngo_name=top_ngo.get("name", ""),
+        ngo_email=top_ngo.get("email", ""),
+        email_sent=email_sent,
+        status_updated=email_sent,
+        status="rescue_dispatched" if email_sent else "reported",
+        email_body=email_body,
+        actions_taken=["Follow-up review completed", "Backup rescue email attempted"],
+        reasoning="Performed a lightweight backup follow-up flow without CrewAI.",
+    ).model_dump()

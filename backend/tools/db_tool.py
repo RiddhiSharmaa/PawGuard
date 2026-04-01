@@ -5,7 +5,13 @@ import logging
 import math
 from datetime import datetime, timezone
 
-from crewai.tools import BaseTool
+try:
+    from crewai.tools import BaseTool
+except Exception:
+    class BaseTool:
+        def __init__(self, **kwargs):
+            for key, value in kwargs.items():
+                setattr(self, key, value)
 from pydantic import BaseModel, Field
 
 from services.supabase_service import get_client

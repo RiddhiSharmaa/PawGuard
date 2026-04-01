@@ -4,7 +4,14 @@ import json
 import os
 
 import requests
-from crewai.tools import BaseTool
+
+try:
+    from crewai.tools import BaseTool
+except Exception:
+    class BaseTool:
+        def __init__(self, **kwargs):
+            for key, value in kwargs.items():
+                setattr(self, key, value)
 from pydantic import BaseModel, Field
 
 

@@ -32,3 +32,6 @@ yarn-error.log*
 /frontend/*.tsbuildinfo
 next-env.d.ts
 /frontend/next-env.d.ts
+
+__pycache__/
+*.pyc

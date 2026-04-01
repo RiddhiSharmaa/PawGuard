@@ -4,9 +4,20 @@ import json
 import logging
 import os
 
-from crewai.tools import BaseTool
-from crewai_tools import TavilySearchTool
 from pydantic import BaseModel, Field
+
+try:
+    from crewai.tools import BaseTool
+except Exception:
+    class BaseTool:
+        def __init__(self, **kwargs):
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+
+try:
+    from crewai_tools import TavilySearchTool
+except Exception:
+    TavilySearchTool = None
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +45,7 @@ class FallbackNGOWebSearchTool(BaseTool):
 
 
 def get_ngo_search_tool():
-    if not os.getenv("TAVILY_API_KEY"):
+    if not os.getenv("TAVILY_API_KEY") or TavilySearchTool is None:
         return FallbackNGOWebSearchTool()
 
     try:

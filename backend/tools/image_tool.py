@@ -6,8 +6,15 @@ import logging
 import os
 
 import google.genai as genai
-from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
+
+try:
+    from crewai.tools import BaseTool
+except Exception:
+    class BaseTool:
+        def __init__(self, **kwargs):
+            for key, value in kwargs.items():
+                setattr(self, key, value)
 
 from services.llm_parsing import extract_json_object
 
