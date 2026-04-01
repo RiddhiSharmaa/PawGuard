@@ -154,9 +154,23 @@ def run_rescue_crew(
             "duplicate_check": DuplicateCheckResult().model_dump(),
             "rescue": RescueResult(status="reported").model_dump(),
         }
+    def convert_confidence(value):
+        if isinstance(value, float):
+            if value >= 0.75:
+                return "high"
+        elif value >= 0.4:
+            return "medium"
+        else:
+            return "low"
+    return value
+
 
     try:
-        dedup_parsed = DuplicateCheckResult.model_validate(parse_json_maybe(dedup_task.output))
+        data = parse_json_maybe(dedup_task.output)
+        if "confidence" in data:
+            data["confidence"] = convert_confidence(data["confidence"])
+            dedup_parsed = DuplicateCheckResult.model_validate(data)
+
     except Exception:
         logger.exception("Failed to parse duplicate detection output")
         dedup_parsed = DuplicateCheckResult()
