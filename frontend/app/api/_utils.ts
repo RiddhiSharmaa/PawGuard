@@ -1,4 +1,5 @@
-const BACKEND_API_BASE_URL =
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, '') ||
   process.env.BACKEND_API_BASE_URL?.replace(/\/$/, '') ||
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, '') ||
   'http://127.0.0.1:8000'
@@ -15,20 +16,17 @@ export async function proxyToBackend(
 
   try {
     const isFormData = init?.body instanceof FormData
+    const headers = isFormData
+      ? init?.headers
+      : {
+          ...init?.headers,
+          'Content-Type': 'application/json',
+        }
 
-    const response = await fetch(`${BACKEND_API_BASE_URL}${path}`, {
+    const response = await fetch(`${API_URL}${path}`, {
       method: init?.method || 'GET',
       body: init?.body,
-
-      // ✅ ONLY pass headers if NOT FormData
-      ...(isFormData
-        ? {}
-        : {
-            headers: {
-              'Content-Type': 'application/json',
-            },
-          }),
-
+      headers,
       cache: 'no-store',
       signal: controller.signal,
     })
