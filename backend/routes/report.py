@@ -84,6 +84,14 @@ def get_supabase_safe():
         return None
 
 
+def build_inline_image_url(image_base64: str, content_type: str | None) -> str:
+    if not image_base64:
+        return ""
+
+    safe_content_type = content_type if content_type and content_type.startswith("image/") else "image/jpeg"
+    return f"data:{safe_content_type};base64,{image_base64}"
+
+
 def persist_initial_report(
     supabase: Any,
     dog_id: str,
@@ -186,6 +194,8 @@ async def report_dog(
             image_url = upload_image_to_supabase(image_bytes, image.filename or "dog.jpg")
         except Exception:
             logger.exception("Image upload failed for dog report %s", dog_id)
+    if not image_url:
+        image_url = build_inline_image_url(image_base64, image.content_type)
     persist_initial_report(supabase, dog_id, image_url, latitude, longitude, address, description, now)
 
     triage_data = build_fallback_triage(description)

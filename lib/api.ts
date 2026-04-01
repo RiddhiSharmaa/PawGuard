@@ -34,10 +34,15 @@ type SOSInput = {
   lng?: number
 }
 
+function normalizeImageUrl(imageUrl?: string | null): string {
+  const trimmed = imageUrl?.trim()
+  return trimmed ? trimmed : '/placeholder.svg'
+}
+
 function normalizeDog(dog: BackendDog): DogReport {
   return {
     id: dog.id,
-    image_url: dog.image_url || '/placeholder.svg',
+    image_url: normalizeImageUrl(dog.image_url),
     latitude: dog.latitude,
     longitude: dog.longitude,
     location_address: dog.location_address || 'Location unavailable',
