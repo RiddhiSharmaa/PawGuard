@@ -103,7 +103,7 @@ def persist_initial_report(
     now: datetime,
 ) -> None:
     if supabase is None:
-        return
+        raise RuntimeError("Supabase client is unavailable during initial report persistence.")
 
     try:
         supabase.table("dogs").insert(
@@ -119,8 +119,9 @@ def persist_initial_report(
                 "followup_at": (now + timedelta(hours=1)).isoformat(),
             }
         ).execute()
-    except Exception:
+    except Exception as exc:
         logger.exception("Initial dog insert failed for dog report %s", dog_id)
+        raise RuntimeError(f"Initial dog insert failed: {exc}") from exc
 
 
 def persist_final_report(
@@ -132,7 +133,7 @@ def persist_final_report(
     final_status: str,
 ) -> None:
     if supabase is None:
-        return
+        raise RuntimeError("Supabase client is unavailable during final report persistence.")
 
     condition = (
         triage_data.injury_description
@@ -158,8 +159,9 @@ def persist_final_report(
                 "is_duplicate": duplicate_data.is_duplicate,
             }
         ).eq("id", dog_id).execute()
-    except Exception:
+    except Exception as exc:
         logger.exception("Dog update failed for dog report %s", dog_id)
+        raise RuntimeError(f"Dog update failed: {exc}") from exc
 
 
 @router.post("/report", response_model=ReportResponse)
@@ -196,7 +198,10 @@ async def report_dog(
             logger.exception("Image upload failed for dog report %s", dog_id)
     if not image_url:
         image_url = build_inline_image_url(image_base64, image.content_type)
-    persist_initial_report(supabase, dog_id, image_url, latitude, longitude, address, description, now)
+    try:
+        persist_initial_report(supabase, dog_id, image_url, latitude, longitude, address, description, now)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     triage_data = build_fallback_triage(description)
     duplicate_data = DuplicateCheckResult()
@@ -250,7 +255,10 @@ async def report_dog(
     elif rescue_data.rescue_dispatched:
         final_status = "rescue_dispatched"
 
-    persist_final_report(supabase, dog_id, triage_data, duplicate_data, rescue_data, final_status)
+    try:
+        persist_final_report(supabase, dog_id, triage_data, duplicate_data, rescue_data, final_status)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     if rescue_data.rescue_dispatched:
         background_tasks.add_task(schedule_followup, dog_id, latitude, longitude)
