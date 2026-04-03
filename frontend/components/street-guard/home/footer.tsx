@@ -17,10 +17,10 @@ export function Footer() {
           <div className="flex items-center gap-3">
             <PawPrint className="w-6 h-6 text-[var(--sg-primary)]" />
             <span className="font-[family-name:var(--font-fraunces)] text-lg font-semibold text-[var(--sg-primary)]">
-              StreetGuard
+              PawGuard
             </span>
             <span className="text-[var(--sg-neutral-400)] text-sm ml-2">
-              Built for Innerve Hackathon 2025
+              
             </span>
           </div>
 

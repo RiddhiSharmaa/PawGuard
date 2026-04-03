@@ -12,7 +12,7 @@ export function WhyItMatters() {
               Stray dogs in Delhi alone need immediate help
             </p>
             <p className="text-[var(--sg-neutral-600)] leading-relaxed max-w-md">
-              {"India's Animal Birth Control (ABC) program struggles to keep pace with the growing stray population. StreetGuard bridges the gap between citizens who spot animals in distress and the NGOs equipped to help them."}
+              {"India's Animal Birth Control (ABC) program struggles to keep pace with the growing stray population. PawGuard bridges the gap between citizens who spot animals in distress and the NGOs equipped to help them."}
             </p>
           </div>
 

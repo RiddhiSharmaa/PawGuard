@@ -21,7 +21,7 @@ export function TopNav() {
         <Link href="/" className="flex items-center gap-2 transition-all duration-200 hover:opacity-80">
           <PawPrint className="w-7 h-7 text-[var(--sg-primary)]" />
           <span className="font-[family-name:var(--font-fraunces)] text-xl font-semibold text-[var(--sg-primary)]">
-            StreetGuard
+            PawGuard
           </span>
         </Link>
 
