@@ -1,9 +1,17 @@
 'use client'
 
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Image from 'next/image'
-import { MapPin, Clock, Ambulance, Syringe, Eye } from 'lucide-react'
+import { MapPin, Clock, Ambulance, Syringe, Eye, Phone } from 'lucide-react'
 import { PriorityBadge } from './priority-badge'
 import { type DogReport, getTimeAgo } from '@/lib/data'
+import {
+  dogCardStatusOptions,
+  getDefaultDogCardStatus,
+  getStoredDogCardStatus,
+  saveDogCardStatus,
+  type DogCardStatus,
+} from '@/lib/dog-card-status'
 
 interface DogCardProps {
   dog: DogReport
@@ -11,6 +19,27 @@ interface DogCardProps {
 }
 
 export function DogCard({ dog, onClick }: DogCardProps) {
+  const defaultStatus = useMemo(() => getDefaultDogCardStatus(dog), [dog.id])
+  const [status, setStatus] = useState<DogCardStatus>(defaultStatus)
+
+  useEffect(() => {
+    const storedStatus = getStoredDogCardStatus(dog.id)
+    setStatus(storedStatus ?? defaultStatus)
+  }, [dog.id, defaultStatus])
+
+  const handleStatusChange = useCallback((nextStatus: DogCardStatus) => {
+    setStatus(nextStatus)
+    saveDogCardStatus(dog.id, nextStatus)
+  }, [dog.id])
+
+  const statusBadgeClassName = useMemo(() => ({
+    Reported: 'bg-[var(--sg-neutral-200)] text-[var(--sg-neutral-700)]',
+    'Being Monitored': 'bg-amber-100 text-amber-700',
+    Rescued: 'bg-green-100 text-green-700',
+    Vaccinated: 'bg-blue-100 text-blue-700',
+    Treated: 'bg-violet-100 text-violet-700',
+  }[status]), [status])
+
   return (
     <div 
       className={`
@@ -53,6 +82,38 @@ export function DogCard({ dog, onClick }: DogCardProps) {
         <p className="text-[var(--sg-neutral-800)] text-[15px] leading-snug line-clamp-2 mb-3">
           {dog.condition}
         </p>
+
+        <div className="mb-3 rounded-xl border border-[var(--sg-neutral-200)] bg-[var(--sg-neutral-50)] p-3">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <span className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[var(--sg-neutral-500)]">
+              Status
+            </span>
+            <span className={`inline-flex rounded-full px-2.5 py-1 text-[12px] font-semibold ${statusBadgeClassName}`}>
+              {status}
+            </span>
+          </div>
+
+          <select
+            value={status}
+            onChange={(e) => handleStatusChange(e.target.value as DogCardStatus)}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full rounded-lg border border-[var(--sg-neutral-200)] bg-white px-3 py-2 text-[13px] text-[var(--sg-neutral-700)] outline-none transition-all duration-200 focus:border-[var(--sg-primary)] focus:ring-2 focus:ring-[var(--sg-primary)]/15"
+            aria-label={`Update status for dog report ${dog.id}`}
+          >
+            {dogCardStatusOptions.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {dog.phone_number && (
+          <div className="flex items-center gap-1.5 text-[var(--sg-neutral-600)] text-[13px] mb-3">
+            <Phone className="w-3.5 h-3.5 flex-shrink-0" />
+            <span>{dog.phone_number}</span>
+          </div>
+        )}
 
         {/* Status */}
         {dog.status === 'rescue_dispatched' && dog.ngo_name && (

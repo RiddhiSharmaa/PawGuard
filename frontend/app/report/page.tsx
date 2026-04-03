@@ -24,6 +24,7 @@ import { TopNav } from '@/components/street-guard/top-nav'
 import { PriorityBadge } from '@/components/street-guard/priority-badge'
 import { submitReport } from '@/lib/api'
 import { ReportResult } from '@/lib/data'
+import { saveLocalReport } from '@/lib/local-reports'
 
 const processingMessages = [
   'Analyzing the image with AI...',
@@ -37,12 +38,41 @@ export default function ReportPage() {
   const [image, setImage] = useState<string | null>(null)
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [description, setDescription] = useState('')
+  const [phoneNumber, setPhoneNumber] = useState('')
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null)
   const [address, setAddress] = useState('')
   const [locationDetected, setLocationDetected] = useState(false)
   const [processingMessageIndex, setProcessingMessageIndex] = useState(0)
   const [result, setResult] = useState<ReportResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [phoneError, setPhoneError] = useState<string | null>(null)
+
+  const normalizedPhoneNumber = phoneNumber.trim()
+
+  const handlePhoneNumberChange = (value: string) => {
+    const digitsOnly = value.replace(/\D/g, '').slice(0, 10)
+    setPhoneNumber(digitsOnly)
+
+    if (phoneError) {
+      setPhoneError(null)
+    }
+  }
+
+  const validatePhoneNumber = () => {
+    if (!normalizedPhoneNumber) {
+      return 'Phone number is required.'
+    }
+
+    if (!/^\d+$/.test(normalizedPhoneNumber)) {
+      return 'Phone number must contain only digits.'
+    }
+
+    if (normalizedPhoneNumber.length !== 10) {
+      return 'Enter a valid 10-digit phone number.'
+    }
+
+    return null
+  }
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -79,12 +109,21 @@ export default function ReportPage() {
   }
 
   const handleSubmit = async () => {
+    const phoneValidationError = validatePhoneNumber()
+
+    if (phoneValidationError) {
+      setPhoneError(phoneValidationError)
+      setError(null)
+      return
+    }
+
     if (!imageFile || !location) {
       setError('Please upload an image and detect your location before submitting.')
       return
     }
 
     setError(null)
+    setPhoneError(null)
     setStep(3)
 
     const messageInterval = setInterval(() => {
@@ -102,6 +141,23 @@ export default function ReportPage() {
         description: description.trim() || 'No description provided',
       })
 
+      const locationAddress =
+        address.trim() ||
+        `Lat ${location.lat.toFixed(5)}, Lng ${location.lng.toFixed(5)}`
+
+      saveLocalReport({
+        imageUrl: image ?? '/placeholder.svg',
+        latitude: location.lat,
+        longitude: location.lng,
+        locationAddress,
+        description: description.trim() || 'No description provided',
+        phoneNumber: normalizedPhoneNumber,
+        urgency: response.assessment.priority,
+        isInjured: response.assessment.is_injured,
+        ngoName: response.rescue_dispatched ? response.ngo_name : null,
+        rescueNeeded: response.assessment.rescue_needed,
+      })
+
       setResult(response)
       setStep(4)
     } catch (err) {
@@ -117,12 +173,14 @@ export default function ReportPage() {
     setImage(null)
     setImageFile(null)
     setDescription('')
+    setPhoneNumber('')
     setLocation(null)
     setAddress('')
     setLocationDetected(false)
     setResult(null)
     setProcessingMessageIndex(0)
     setError(null)
+    setPhoneError(null)
   }
 
   useEffect(() => {
@@ -215,6 +273,26 @@ export default function ReportPage() {
                     placeholder="e.g. Dog is limping badly near the gate, appears to have been hit by a vehicle"
                     className="w-full h-56 px-4 py-3 rounded-xl border border-[var(--sg-neutral-200)] focus:border-[var(--sg-primary)] focus:ring-2 focus:ring-[var(--sg-primary)]/20 outline-none resize-none text-[var(--sg-neutral-800)] placeholder:text-[var(--sg-neutral-400)] transition-all duration-200"
                   />
+
+                  <label className="block text-sm font-medium text-[var(--sg-neutral-700)] mt-4 mb-2">
+                    Phone Number
+                  </label>
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
+                    value={phoneNumber}
+                    onChange={(e) => handlePhoneNumberChange(e.target.value)}
+                    placeholder="Enter your 10-digit number"
+                    className={`w-full px-4 py-3 rounded-xl border outline-none text-[var(--sg-neutral-800)] placeholder:text-[var(--sg-neutral-400)] transition-all duration-200 ${
+                      phoneError
+                        ? 'border-red-300 focus:border-red-400 focus:ring-2 focus:ring-red-100'
+                        : 'border-[var(--sg-neutral-200)] focus:border-[var(--sg-primary)] focus:ring-2 focus:ring-[var(--sg-primary)]/20'
+                    }`}
+                  />
+                  <p className={`mt-2 text-sm ${phoneError ? 'text-red-600' : 'text-[var(--sg-neutral-500)]'}`}>
+                    {phoneError || 'Digits only. A 10-digit phone number is preferred.'}
+                  </p>
                 </div>
               </div>
 

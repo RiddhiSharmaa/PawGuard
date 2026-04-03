@@ -23,6 +23,7 @@ export interface DogReport {
   reported_at: string
   is_vaccinated: boolean
   description?: string
+  phone_number?: string
   rescue_needed?: boolean
 }
 
@@ -87,7 +88,8 @@ export const mockDogs: DogReport[] = [
     status: "rescue_dispatched",
     ngo_name: "Friendicoes SECA",
     reported_at: new Date(Date.now() - 12 * 60000).toISOString(),
-    is_vaccinated: false
+    is_vaccinated: false,
+    phone_number: "9876543210"
   },
   {
     id: "2",
@@ -102,7 +104,8 @@ export const mockDogs: DogReport[] = [
     status: "reported",
     ngo_name: null,
     reported_at: new Date(Date.now() - 34 * 60000).toISOString(),
-    is_vaccinated: true
+    is_vaccinated: true,
+    phone_number: "9876501234"
   },
   {
     id: "3",
@@ -117,7 +120,8 @@ export const mockDogs: DogReport[] = [
     status: "rescued",
     ngo_name: "Jeev Ashram",
     reported_at: new Date(Date.now() - 2 * 3600000).toISOString(),
-    is_vaccinated: false
+    is_vaccinated: false,
+    phone_number: "9812345678"
   },
   {
     id: "4",
@@ -132,7 +136,8 @@ export const mockDogs: DogReport[] = [
     status: "rescue_dispatched",
     ngo_name: "People For Animals",
     reported_at: new Date(Date.now() - 8 * 60000).toISOString(),
-    is_vaccinated: false
+    is_vaccinated: false,
+    phone_number: "9898989898"
   },
   {
     id: "5",
@@ -147,7 +152,8 @@ export const mockDogs: DogReport[] = [
     status: "reported",
     ngo_name: null,
     reported_at: new Date(Date.now() - 45 * 60000).toISOString(),
-    is_vaccinated: true
+    is_vaccinated: true,
+    phone_number: "9123456789"
   },
   {
     id: "6",
@@ -162,7 +168,8 @@ export const mockDogs: DogReport[] = [
     status: "rescued",
     ngo_name: "Sanjay Gandhi Animal Care Centre",
     reported_at: new Date(Date.now() - 4 * 3600000).toISOString(),
-    is_vaccinated: true
+    is_vaccinated: true,
+    phone_number: "9000011111"
   }
 ]
 

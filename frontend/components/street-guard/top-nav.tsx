@@ -8,6 +8,7 @@ const navLinks = [
   { href: '/', label: 'Home' },
   { href: '/map', label: 'Map' },
   { href: '/feed', label: 'Feed' },
+  { href: '/ngo-register', label: 'NGO Register' },
   { href: '/sos', label: 'SOS', isUrgent: true },
 ]
 

@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { ArrowRight } from 'lucide-react'
 import { DogCard } from '@/components/street-guard/dog-card'
 import { fetchDogs as fetchDogsFromApi } from '@/lib/api'
@@ -10,18 +10,30 @@ import { DogReport } from '@/lib/data'
 export function RecentRescues() {
   const [recentDogs, setRecentDogs] = useState<DogReport[]>([])
 
-  useEffect(() => {
-    const loadDogs = async () => {
-      try {
-        const dogs = await fetchDogsFromApi()
-        setRecentDogs(dogs.slice(0, 3))
-      } catch {
-        setRecentDogs([])
+  const loadDogs = useCallback(async (isMountedRef?: { current: boolean }) => {
+    try {
+      const dogs = await fetchDogsFromApi()
+      if (isMountedRef && !isMountedRef.current) {
+        return
       }
+      setRecentDogs(dogs.slice(0, 3))
+    } catch {
+      if (isMountedRef && !isMountedRef.current) {
+        return
+      }
+      setRecentDogs([])
     }
-
-    loadDogs()
   }, [])
+
+  useEffect(() => {
+    const isMountedRef = { current: true }
+
+    void loadDogs(isMountedRef)
+
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [loadDogs])
 
   return (
     <section className="max-w-7xl mx-auto px-10 py-16">

@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PawPrint, TriangleAlert } from 'lucide-react'
 import { TopNav } from '@/components/street-guard/top-nav'
 import { DogCard } from '@/components/street-guard/dog-card'
 import { fetchDogs as fetchDogsFromApi } from '@/lib/api'
 import { type DogReport } from '@/lib/data'
+import { getLocalReports } from '@/lib/local-reports'
 
 type FilterType = 'all' | 'urgent' | 'medium' | 'rescued' | 'vaccinated'
 
@@ -23,31 +24,46 @@ export default function FeedPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    const loadDogs = async () => {
-      try {
-        const data = await fetchDogsFromApi()
-        setDogs(data)
-        setError(null)
-      } catch (err) {
-        setDogs([])
-        setError(err instanceof Error ? err.message : 'Unable to load dog reports right now.')
-      } finally {
-        setIsLoading(false)
+  const loadDogs = useCallback(async (isMountedRef?: { current: boolean }) => {
+    try {
+      const data = await fetchDogsFromApi()
+      if (isMountedRef && !isMountedRef.current) {
+        return
       }
+      setDogs([...getLocalReports(), ...data])
+      setError(null)
+    } catch (err) {
+      if (isMountedRef && !isMountedRef.current) {
+        return
+      }
+      setDogs(getLocalReports())
+      setError(err instanceof Error ? err.message : 'Unable to load dog reports right now.')
+    } finally {
+      if (isMountedRef && !isMountedRef.current) {
+        return
+      }
+      setIsLoading(false)
     }
-
-    loadDogs()
   }, [])
 
-  const filteredDogs = dogs.filter((dog) => {
+  useEffect(() => {
+    const isMountedRef = { current: true }
+
+    void loadDogs(isMountedRef)
+
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [loadDogs])
+
+  const filteredDogs = useMemo(() => dogs.filter((dog) => {
     if (filter === 'all') return true
     if (filter === 'urgent') return dog.priority === 'urgent'
     if (filter === 'medium') return dog.priority === 'medium'
     if (filter === 'rescued') return dog.status === 'rescued' || dog.status === 'rescue_dispatched'
     if (filter === 'vaccinated') return dog.is_vaccinated
     return true
-  })
+  }), [dogs, filter])
 
   return (
     <>
@@ -94,7 +110,7 @@ export default function FeedPage() {
                 </div>
               ))}
             </div>
-          ) : error ? (
+          ) : error && filteredDogs.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <TriangleAlert className="w-16 h-16 text-amber-500 mb-4" />
               <p className="text-[var(--sg-neutral-700)] text-lg mb-2">

@@ -5,6 +5,7 @@ const footerLinks = [
   { href: '/report', label: 'Report' },
   { href: '/map', label: 'Map' },
   { href: '/feed', label: 'Feed' },
+  { href: '/ngo-register', label: 'NGO Register' },
   { href: '/sos', label: 'SOS' },
 ]
 

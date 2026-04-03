@@ -16,6 +16,7 @@ type BackendDog = {
   reported_at?: string | null
   rescue_needed?: boolean | null
   description?: string | null
+  phone_number?: string | null
 }
 
 type SubmitReportInput = {
@@ -56,6 +57,7 @@ function normalizeDog(dog: BackendDog): DogReport {
     reported_at: dog.reported_at || new Date().toISOString(),
     is_vaccinated: false,
     description: dog.description || undefined,
+    phone_number: dog.phone_number || undefined,
     rescue_needed: Boolean(dog.rescue_needed),
   }
 }

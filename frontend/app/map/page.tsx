@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import dynamic from 'next/dynamic'
@@ -47,41 +47,58 @@ export default function MapPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    const loadDogs = async () => {
-      try {
-        const data = await fetchDogsFromApi()
-        setDogs(data)
-        setError(null)
-      } catch (err) {
-        setDogs([])
-        setError(err instanceof Error ? err.message : 'Unable to load the rescue map.')
-      } finally {
-        setIsLoading(false)
+  const loadDogs = useCallback(async (isMountedRef?: { current: boolean }) => {
+    try {
+      const data = await fetchDogsFromApi()
+      if (isMountedRef && !isMountedRef.current) {
+        return
       }
+      setDogs(data)
+      setError(null)
+    } catch (err) {
+      if (isMountedRef && !isMountedRef.current) {
+        return
+      }
+      setDogs([])
+      setError(err instanceof Error ? err.message : 'Unable to load the rescue map.')
+    } finally {
+      if (isMountedRef && !isMountedRef.current) {
+        return
+      }
+      setIsLoading(false)
     }
-
-    loadDogs()
-
-    const interval = setInterval(loadDogs, 30000)
-    return () => clearInterval(interval)
   }, [])
 
-  const filteredDogs = dogs.filter((dog) => {
+  useEffect(() => {
+    const isMountedRef = { current: true }
+
+    void loadDogs(isMountedRef)
+
+    const interval = setInterval(() => {
+      void loadDogs(isMountedRef)
+    }, 30000)
+
+    return () => {
+      isMountedRef.current = false
+      clearInterval(interval)
+    }
+  }, [loadDogs])
+
+  const filteredDogs = useMemo(() => dogs.filter((dog) => {
     if (filter === 'all') return true
     if (filter === 'urgent') return dog.priority === 'urgent'
     if (filter === 'medium') return dog.priority === 'medium'
     if (filter === 'rescued') return dog.status === 'rescued' || dog.status === 'rescue_dispatched'
     return true
-  })
+  }), [dogs, filter])
 
-  const handleMarkerClick = (dog: DogReport) => {
+  const handleMarkerClick = useCallback((dog: DogReport) => {
     setSelectedDog(dog)
-  }
+  }, [])
 
-  const handleBackToList = () => {
+  const handleBackToList = useCallback(() => {
     setSelectedDog(null)
-  }
+  }, [])
 
   return (
     <>
