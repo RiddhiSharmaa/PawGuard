@@ -18,6 +18,56 @@ const filterOptions: { value: FilterType; label: string }[] = [
   { value: 'vaccinated', label: 'Vaccinated' },
 ]
 
+function normalizeText(value?: string | null) {
+  return value?.trim().toLowerCase().replace(/\s+/g, ' ') ?? ''
+}
+
+function areLikelySameDog(localDog: DogReport, remoteDog: DogReport) {
+  const sameLocation = normalizeText(localDog.location_address) === normalizeText(remoteDog.location_address)
+  const sameCondition = normalizeText(localDog.condition) === normalizeText(remoteDog.condition)
+  const samePriority = localDog.priority === remoteDog.priority
+  const sameCoordinates =
+    Math.abs(localDog.latitude - remoteDog.latitude) < 0.0001 &&
+    Math.abs(localDog.longitude - remoteDog.longitude) < 0.0001
+
+  const localReportedAt = new Date(localDog.reported_at).getTime()
+  const remoteReportedAt = new Date(remoteDog.reported_at).getTime()
+  const withinOneHour =
+    Number.isFinite(localReportedAt) &&
+    Number.isFinite(remoteReportedAt) &&
+    Math.abs(localReportedAt - remoteReportedAt) <= 60 * 60 * 1000
+
+  return sameCoordinates && sameLocation && sameCondition && samePriority && withinOneHour
+}
+
+function mergeDogReports(localReports: DogReport[], remoteReports: DogReport[]) {
+  const mergedReports = [...remoteReports]
+
+  localReports.forEach((localDog) => {
+    const remoteDogIndex = mergedReports.findIndex((remoteDog) => areLikelySameDog(localDog, remoteDog))
+
+    if (remoteDogIndex === -1) {
+      mergedReports.unshift(localDog)
+      return
+    }
+
+    const remoteDog = mergedReports[remoteDogIndex]
+    mergedReports[remoteDogIndex] = {
+      ...remoteDog,
+      phone_number: remoteDog.phone_number ?? localDog.phone_number,
+      image_url: remoteDog.image_url || localDog.image_url,
+      description: remoteDog.description ?? localDog.description,
+      condition: remoteDog.condition || localDog.condition,
+      rescue_needed: remoteDog.rescue_needed ?? localDog.rescue_needed,
+      is_injured: remoteDog.is_injured ?? localDog.is_injured,
+    }
+  })
+
+  return mergedReports.sort(
+    (a, b) => new Date(b.reported_at).getTime() - new Date(a.reported_at).getTime()
+  )
+}
+
 export default function FeedPage() {
   const [dogs, setDogs] = useState<DogReport[]>([])
   const [filter, setFilter] = useState<FilterType>('all')
@@ -30,7 +80,7 @@ export default function FeedPage() {
       if (isMountedRef && !isMountedRef.current) {
         return
       }
-      setDogs([...getLocalReports(), ...data])
+      setDogs(mergeDogReports(getLocalReports(), data))
       setError(null)
     } catch (err) {
       if (isMountedRef && !isMountedRef.current) {
